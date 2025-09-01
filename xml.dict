@@ -1,0 +1,72 @@
+# AFL Dictionary for XML backup format
+# Basic XML structure
+"<?xml version=\"1.0\"?>"
+"<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+"<backup"
+"</backup>"
+"/>"
+"</"
+">"
+"<"
+
+# Core attributes
+" id=\""
+" date=\""
+" comment=\""
+" version=\""
+"\""
+
+# Component elements (добавьте реальные имена после исследования)
+"<core>"
+"</core>"
+"<av>"
+"</av>"
+"<firewall>"
+"</firewall>"
+"<config>"
+"</config>"
+
+# File elements
+"<file>"
+"</file>"
+
+# Typical values
+"001"
+"123456"
+"test backup"
+"01.01.2024 12:00:00"
+"1.0.0"
+"8.0"
+
+# File paths
+"/opt/securitycode/sns"
+"/usr/backup"
+"/etc/config"
+"/tmp/test"
+
+# Edge cases
+""
+" "
+"AAAAAAAAAAAAAAAAAAAAAAAAA"
+"99999999999999999999"
+"../"
+"../../../etc/passwd"
+
+# XML special chars
+"&lt;"
+"&gt;"  
+"&amp;"
+"&quot;"
+"<![CDATA["
+"]]>"
+
+# Malformed patterns
+"<backup><"
+"></backup>"
+"<<backup>>"
+"<backup id=>"
+"<backup id=\"\">"
+
+# Complete structures
+"<backup id=\"001\" date=\"01.01.2024 00:00:00\"></backup>"
+"<backup id=\"001\"><core><file>/test</file></core></backup>"
