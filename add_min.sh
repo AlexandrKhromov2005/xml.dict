@@ -1,40 +1,138 @@
 #!/bin/bash
 
-# Создаем новую директорию для минимального корпуса
-rm -rf in_minimal
-mkdir -p in_minimal
+CORPUS_DIR="in"
 
-# 1. Совсем пустой файл
-touch in_minimal/empty.xml
 
-# 2. Один символ
-echo "a" > in_minimal/single_char.xml
-
-# 3. Только XML declaration
-echo '<?xml version="1.0"?>' > in_minimal/only_declaration.xml
-
-# 4. Неправильный XML (без закрывающего тега)
-echo '<?xml version="1.0"?><backup' > in_minimal/unclosed_tag.xml
-
-# 5. Минимальный валидный XML
-echo '<?xml version="1.0"?><backup id="1" date="01.01.2024 00:00:00"/>' > in_minimal/minimal_valid.xml
-
-# 6. С missing id (должен возвращать другую ошибку)
-echo '<?xml version="1.0"?><backup date="01.01.2024 00:00:00"/>' > in_minimal/no_id.xml
-
-# 7. С missing date (другая ошибка)  
-echo '<?xml version="1.0"?><backup id="123"/>' > in_minimal/no_date.xml
-
-# 8. С компонентом
-cat > in_minimal/with_component.xml << 'EOF'
+cat > "$CORPUS_DIR/seed_001.xml" << 'EOF'
 <?xml version="1.0"?>
-<backup id="123" date="01.01.2024 00:00:00">
-    <core>
-        <file>/test.conf</file>
-    </core>
-</backup>
+<request id="1" plugin="test">
+  <command/>
+</request>
 EOF
 
-echo "Создан минимальный корпус в in_minimal/ с 8 файлами"
-echo "Теперь запустите фаззинг с минимальным корпусом:"
-echo "afl-fuzz -i in_minimal/ -o out_minimal/ -m none -M main -- ./snbckctl -l @@"
+cat > "$CORPUS_DIR/seed_002.xml" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<request id="2" plugin="firewall">
+  <command name="add_rule">
+    <param name="source">192.168.1.1</param>
+    <param name="dest">192.168.1.2</param>
+  </command>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_003.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="3" plugin="userservice">
+  <command name="add_user">
+    <user>
+      <name>testuser</name>
+      <group>users</group>
+      <permissions>
+        <read>true</read>
+        <write>false</write>
+      </permissions>
+    </user>
+  </command>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_004.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="4" plugin="logger">
+  <command name="log">
+    <message><![CDATA[Log message with <special> & characters]]></message>
+  </command>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_005.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="5" plugin="system" initiator="admin" initiator_proc="snserv">
+  <command name="status"/>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_006.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="6" plugin="">
+  <command/>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_007.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="7" plugin="nonexistent_plugin_12345">
+  <command name="test"/>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_008.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="8" plugin="test">
+  <command>
+    <data>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA</data>
+  </command>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_009.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="9" plugin="test">
+  <command>
+    <value>&lt;test&gt;&amp;&quot;&apos;</value>
+  </command>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_010.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="10" plugin="batch">
+  <command name="cmd1"/>
+  <command name="cmd2"/>
+  <command name="cmd3"/>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_011.xml" << 'EOF'
+<?xml version="1.0"?>
+<!-- This is a test request -->
+<request id="11" plugin="test">
+  <!-- Command section -->
+  <command name="test">
+    <!-- Parameters -->
+    <param>value</param>
+  </command>
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_012.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="12" plugin="test">
+  <command name="unclosed"
+</request>
+EOF
+
+cat > "$CORPUS_DIR/seed_013.xml" << 'EOF'
+<?xml version="1.0"?>
+<sn:request xmlns:sn="http://secretnet.example.com" id="13" plugin="test">
+  <sn:command/>
+</sn:request>
+EOF
+
+cat > "$CORPUS_DIR/seed_014.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="14" plugin="test"/>
+EOF
+
+cat > "$CORPUS_DIR/seed_015.xml" << 'EOF'
+<?xml version="1.0"?>
+<request id="4294967295" plugin="test">
+  <command>
+    <value>-2147483648</value>
+    <value>2147483647</value>
+    <value>0</value>
+  </command>
+</request>
+EOF
+
+echo "Created 15 seed files in $CORPUS_DIR/"
