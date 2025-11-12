@@ -1,0 +1,219 @@
+# ============================================================================
+# Stage 1: Базовый образ с зависимостями
+# ============================================================================
+FROM astralinux/astra:1.7 AS base
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
+
+# Обновить репозитории и установить базовые инструменты
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    make \
+    gcc \
+    g++ \
+    cmake \
+    git \
+    wget \
+    curl \
+    bc \
+    bison \
+    flex \
+    libelf-dev \
+    libncurses-dev \
+    libssl-dev \
+    dwarves \
+    cpio \
+    kmod \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Попытка установить заголовки ядра (может не работать в контейнере)
+RUN apt-get update && \
+    (apt-get install -y linux-headers-$(uname -r) || echo "Kernel headers not available, will use volume mount") && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# Stage 2: Сборка AFL++
+# ============================================================================
+FROM base AS afl-builder
+
+# Установка зависимостей для AFL++
+RUN apt-get update && apt-get install -y \
+    llvm \
+    clang \
+    llvm-dev \
+    gcc-plugin-dev \
+    python3 \
+    python3-dev \
+    ninja-build \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Клонирование и сборка AFL++
+WORKDIR /opt
+RUN git clone --depth 1 --branch stable https://github.com/AFLplusplus/AFLplusplus && \
+    cd AFLplusplus && \
+    make distrib && \
+    make install
+
+# ============================================================================
+# Stage 3: Сборка Capstone
+# ============================================================================
+FROM base AS capstone-builder
+
+WORKDIR /opt
+RUN git clone --depth 1 https://github.com/capstone-engine/capstone.git && \
+    cd capstone && \
+    ./make.sh && \
+    ./make.sh install
+
+# ============================================================================
+# Stage 4: Сборка LibVMI
+# ============================================================================
+FROM base AS libvmi-builder
+
+# Установка зависимостей для LibVMI
+RUN apt-get update && apt-get install -y \
+    cmake \
+    flex \
+    bison \
+    libglib2.0-dev \
+    libvirt-dev \
+    libjson-c-dev \
+    libyajl-dev \
+    libtool \
+    autoconf \
+    automake \
+    pkg-config \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+RUN git clone --depth 1 https://github.com/libvmi/libvmi.git && \
+    cd libvmi && \
+    mkdir build && \
+    cd build && \
+    cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    make -j$(nproc) && \
+    make install
+
+# ============================================================================
+# Stage 5: Сборка KF/x
+# ============================================================================
+FROM base AS kfx-builder
+
+# Копируем собранные библиотеки из предыдущих stage
+COPY --from=capstone-builder /usr/local /usr/local
+COPY --from=libvmi-builder /usr/local /usr/local
+
+# Установка зависимостей
+RUN apt-get update && apt-get install -y \
+    libglib2.0-dev \
+    libjson-c-dev \
+    libyajl-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Обновить линкер
+RUN ldconfig
+
+# Клонирование и сборка KF/x
+WORKDIR /opt
+RUN git clone --recursive https://github.com/intel/kernel-fuzzer-for-xen-project && \
+    cd kernel-fuzzer-for-xen-project && \
+    make
+
+# ============================================================================
+# Stage 6: Финальный образ
+# ============================================================================
+FROM base AS final
+
+# Установка runtime зависимостей
+RUN apt-get update && apt-get install -y \
+    llvm \
+    clang \
+    python3 \
+    libglib2.0-0 \
+    libvirt0 \
+    libjson-c5 \
+    libyajl2 \
+    vim \
+    nano \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Копирование AFL++ из builder stage
+COPY --from=afl-builder /usr/local/bin/afl-* /usr/local/bin/
+COPY --from=afl-builder /usr/local/lib/afl /usr/local/lib/afl
+COPY --from=afl-builder /usr/local/share/afl /usr/local/share/afl
+
+# Копирование Capstone
+COPY --from=capstone-builder /usr/local/lib/libcapstone* /usr/local/lib/
+COPY --from=capstone-builder /usr/local/include/capstone /usr/local/include/capstone
+
+# Копирование LibVMI
+COPY --from=libvmi-builder /usr/local/lib/libvmi* /usr/local/lib/
+COPY --from=libvmi-builder /usr/local/include/libvmi /usr/local/include/libvmi
+
+# Копирование KF/x
+COPY --from=kfx-builder /opt/kernel-fuzzer-for-xen-project /opt/kfx
+
+# Обновление динамического линкера
+RUN ldconfig
+
+# Создание рабочих директорий
+RUN mkdir -p /workspace/fuzzing/{module,seeds,scripts,output,artifacts}
+
+# Создание симлинка для удобства
+RUN ln -s /opt/kfx/kfx /usr/local/bin/kfx
+
+# Установка рабочей директории
+WORKDIR /workspace/fuzzing
+
+# Создание вспомогательного скрипта для проверки окружения
+RUN cat > /usr/local/bin/check-fuzzing-env << 'EOF'
+#!/bin/bash
+echo "=== Fuzzing Environment Check ==="
+echo ""
+echo "GCC version:"
+gcc --version | head -n1
+echo ""
+echo "Clang version:"
+clang --version | head -n1
+echo ""
+echo "AFL++ version:"
+afl-fuzz --version 2>&1 | head -n1
+echo ""
+echo "KF/x:"
+kfx --help > /dev/null 2>&1 && echo "✓ KF/x available" || echo "✗ KF/x not found"
+echo ""
+echo "Libraries:"
+ldconfig -p | grep -E "(libvmi|capstone)" | wc -l | xargs echo "  Found libraries:"
+echo ""
+echo "Kernel headers:"
+if [ -d "/lib/modules/$(uname -r)/build" ]; then
+    echo "✓ Kernel headers available at /lib/modules/$(uname -r)/build"
+else
+    echo "✗ Kernel headers not found (mount /lib/modules as volume)"
+fi
+echo ""
+echo "==================================="
+EOF
+
+RUN chmod +x /usr/local/bin/check-fuzzing-env
+
+# Переменные окружения
+ENV PATH="/usr/local/bin:/opt/kfx:${PATH}"
+ENV AFL_SKIP_CPUFREQ=1
+ENV AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1
+
+# Метаданные
+LABEL maintainer="fuzzing-team"
+LABEL description="Astra Linux 1.7 kernel fuzzing environment with KF/x, AFL++, LibVMI, Capstone"
+LABEL version="1.0"
+
+# Точка входа - запуск bash с проверкой окружения
+CMD ["/bin/bash", "-c", "check-fuzzing-env && exec /bin/bash"]
