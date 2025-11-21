@@ -1,0 +1,7 @@
+sudo apt update
+sudo apt install -y build-essential git cmake automake autoconf libtool \
+    python3-dev flex bison libglib2.0-dev libpixman-1-dev pkg-config \
+    libssl-dev libjson-c-dev libyajl-dev libyajl2 bridge-utils \
+    libncurses5-dev uuid-dev ocaml libx11-dev gettext libfdt-dev \
+    libaio-dev libnl-3-dev libnl-route-3-dev xz-utils wget \
+    libvirt-dev gawk perl
